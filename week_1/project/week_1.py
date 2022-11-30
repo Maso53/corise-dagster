@@ -49,11 +49,11 @@ def get_s3_data(context) -> List:
     
 @op
 def process_data(context, stock:list) -> Aggregation:
-    max_high = max([x.high for x in stock])
-    high_stock = [x for x in stock if x.high == max_high]
-    high_stock = high_stock[0]
-    agg = Aggregation(date=high_stock.date, high=high_stock.high)
-    return agg
+    max_item = Aggregation(date=datetime.now(), high=0.0)
+    for stock in stock:
+        if stock.high > max_item.high:
+            max_item = Aggregation(date=stock.date, high=stock.high)
+    return max_item
 
 @op
 def put_redis_data(context, Aggregation):
