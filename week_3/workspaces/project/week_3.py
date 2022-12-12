@@ -134,17 +134,18 @@ def week_3_schedule_docker():
     minimum_interval_seconds=30
 )
 def week_3_sensor_docker(context):
-    new_files = get_s3_keys(
+    s3_keys = get_s3_keys(
         bucket="dagster",
         prefix="prefix",
         endpoint_url="http://localstack:4566"
     )
-    if not new_files:
+    if not s3_keys:
         yield SkipReason("No new s3 files found in bucket.")
         return
-    for new_files in new_files:
+    for s3_key in s3_keys:
+        docker_config = docker.copy()
         docker_config['ops'] = {"get_s3_data": {"config": {"s3_key": f"{s3_key}"}}}
         yield RunRequest(
-            run_key=new_files, 
+            run_key=s3_key, 
             run_config=docker_config
         )
