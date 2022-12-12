@@ -85,27 +85,66 @@ docker = {
 }
 
 
-def docker_config():
-    pass
+@static_partitioned_config(
+    partition_keys=[str(i) for i in range(1, 11)]
+)
+def docker_config(partition_key: String):
+    docker_config = docker.copy()
+    docker_config['ops'] = {"get_s3_data": {"config": {"s3_key": f"prefix/stock_{partition_key}.csv"}}}
+    return docker_config
 
 
 week_3_pipeline_local = week_3_pipeline.to_job(
-    name="week_3_pipeline_local",
+    name = "week_3_pipeline_local",
+    config = local,
+    resource_defs = {
+        "s3": mock_s3_resource,
+        "redis": ResourceDefinition.mock_resource()
+    },
 )
 
 week_3_pipeline_docker = week_3_pipeline.to_job(
-    name="week_3_pipeline_docker",
+    name = "week_3_pipeline_docker",
+    config = docker,
+    resource_defs = {
+        "s3": s3_resource,
+        "redis": redis_resource
+    },
+    op_retry_policy=RetryPolicy(max_retries=10, delay=1)
 )
 
 
-week_3_schedule_local = None
+week_3_schedule_local = ScheduleDefinition(
+    job=week_3_pipeline_local,
+    cron_schedule="*/15 * * * *"
+)
 
-
-@schedule
+@schedule(
+    job=week_3_pipeline_docker,
+    cron_schedule="0 * * * *"
+)
 def week_3_schedule_docker():
-    pass
+    return RunRequest(
+        run_config=docker_config       
+    )
 
 
-@sensor
-def week_3_sensor_docker():
-    pass
+@sensor(
+    job=week_3_pipeline_docker,
+    minimum_interval_seconds=30
+)
+def week_3_sensor_docker(context):
+    new_files = get_s3_keys(
+        bucket="dagster",
+        prefix="prefix",
+        endpoint_url="http://localstack:4566"
+    )
+    if not new_files:
+        yield SkipReason("No new s3 files found in bucket.")
+        return
+    for new_files in new_files:
+        docker_config['ops'] = {"get_s3_data": {"config": {"s3_key": f"{s3_key}"}}}
+        yield RunRequest(
+            run_key=new_files, 
+            run_config=docker_config
+        )
